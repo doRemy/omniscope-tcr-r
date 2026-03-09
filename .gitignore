@@ -1,0 +1,36 @@
+# R history and workspace
+.Rhistory
+.RData
+.Ruserdata
+.Rapp.history
+
+# RStudio project files
+*.Rproj
+.Rproj.user/
+
+# R package build artifacts (in case the project is ever packaged)
+*.o
+*.so
+*.dll
+/doc/
+/Meta/
+/inst/doc/
+
+# Temporary R files
+*.Rout
+*.Rout.fail
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Data files (uncomment if you don't want to track data)
+# *.csv
+# *.tsv
+# data/
