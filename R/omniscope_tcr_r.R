@@ -547,20 +547,21 @@ load_omniscope_tcr <- function(
 #'
 #' @return The input data.frame with added columns: clonotype_id, clone_size.
 
-assign_clonotypes <- function(tcr_df, method = "cdr3_aa") {
+assign_clonotypes <- function(tcr_df, method = "gene+cdr3_aa") {
   tcr_df$clone_key <- switch(method,
     "cdr3_aa"      = tcr_df$cdr3_aa,
     "cdr3_nt"      = tcr_df$cdr3_nt,
-    "gene+cdr3_aa" = paste(tcr_df$v_gene, tcr_df$j_gene, tcr_df$cdr3_aa, sep = "_"),
+    "gene+cdr3_aa" = paste(tcr_df$v_gene, tcr_df$cdr3_aa, tcr_df$j_gene, sep = "_"),
     stop("method must be 'cdr3_aa', 'cdr3_nt', or 'gene+cdr3_aa'")
   )
+  
 
   freq   <- sort(table(tcr_df$clone_key), decreasing = TRUE)
   id_map <- setNames(seq_along(freq), names(freq))
 
   tcr_df$clonotype_id <- paste0("clonotype_", id_map[tcr_df$clone_key])
   tcr_df$clone_size   <- as.integer(freq[tcr_df$clone_key])
-  tcr_df$clone_key    <- NULL
+  # tcr_df$clone_key    <- NULL
 
   return(tcr_df)
 }
@@ -602,10 +603,11 @@ get_clonotype_table <- function(tcr_df, sample_id_columns = NULL) {
     cell_ids <- n_cells <- counts <- NULL
 
   # --- Validate required columns -------------------------------------------
-  .validate_cols(tcr_df, c("chain", "clonotype_id"), "tcr_df")
-  if (!is.null(sample_id_columns))
+  .validate_cols(tcr_df, c("chain", "clonotype_id", "clone_key"), "tcr_df")
+  if (!is.null(sample_id_columns)){
     .validate_cols(tcr_df, sample_id_columns, "tcr_df (sample_id_columns)")
-
+  }
+  
   # --- Fill missing optional columns with NA, with a warning ---------------
   optional_cols <- c("n_cells", "counts",
                      "v_gene", "d_gene", "j_gene",
@@ -621,7 +623,7 @@ get_clonotype_table <- function(tcr_df, sample_id_columns = NULL) {
   }
 
   # --- Summarise (via data.table for speed and statistics) -----------------
-  group_cols <- c("chain", "clonotype_id", sample_id_columns)
+  group_cols <- c("chain", "clonotype_id", "clone_key", sample_id_columns)
   dt <- data.table::as.data.table(tcr_df)
 
   df.out <- dt[, {
@@ -663,6 +665,21 @@ get_clonotype_table <- function(tcr_df, sample_id_columns = NULL) {
       cell_id       = paste(.cells,     collapse = ",")
     )
   }, by = group_cols]
+  
+  
+  df.sanity.check <- df.out %>% 
+    group_by(Patient, Time) %>% 
+    summarise(
+      n_total = n(), 
+      n_unique_key = length(unique(clone_key)),
+      n_unique_id = length(unique(clonotype_id)),
+      .groups = "drop"
+      ) %>%
+    as.data.frame()
+  
+  if (!all(df.sanity.check$n_total == df.sanity.check$n_unique_id) & all(df.sanity.check$n_total == df.sanity.check$n_unique_key)){
+    warning("get_clonotype_table: Duplicated clones")
+  }
 
   return(as.data.frame(df.out))
 }
