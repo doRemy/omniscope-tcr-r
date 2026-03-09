@@ -13,7 +13,7 @@ The TCR sequencing technology and output format come from [Omniscope](https://ww
 Install the required R packages before use:
 
 ```r
-install.packages(c("dplyr", "data.table"))
+install.packages("dplyr")
 ```
 
 ---
@@ -66,19 +66,10 @@ TCR.table.list <- load_omniscope_tcr(
 # --- Retrieve outputs ---
 # one row per cell × chain
 df.cellwise   <- TCR.table.list$cellwise
-# one row per unique contig 
+# one row per unique contig
 df.contigwise <- TCR.table.list$contigwise
 # QC summary counts
 df.qc         <- TCR.table.list$summary
-
-# --- Assign clonotypes ---
-df.contigwise <- assign_clonotypes(tcr_df = df.contigwise, method = "cdr3_aa")
-
-# --- Get clonotype-wise table ---
-df.TCR <- get_clonotype_table(
-  tcr_df            = df.contigwise,
-  sample_id_columns = c("SampleID", "Patient", "Time", "TIME_POINT_SAMPLE", "chain")
-)
 ```
 
 ---
@@ -99,11 +90,9 @@ df.TCR <- get_clonotype_table(
 
 | Function | Description |
 |----------|-------------|
-| `load_omniscope_tcr()` | Main entry point — loads contigs, counts, and pairs; applies QC filters; returns all three output tables |
+| `load_omniscope_tcr()` | Main entry point — loads contigs, counts, and pairs; applies QC filters; returns both output tables |
 | `load_omniscope_contigs_cellwise()` | Load and QC-filter contigs to a cell × chain table |
 | `contigs_to_contigwise()` | Collapse cell-wise table to one row per unique contig |
-| `assign_clonotypes()` | Add `clonotype_id` and `clone_size` columns; methods: `cdr3_aa`, `cdr3_nt`, `gene+cdr3_aa` |
-| `get_clonotype_table()` | Collapse contig-wise table to one row per clonotype, with optional grouping columns |
 
 ---
 
