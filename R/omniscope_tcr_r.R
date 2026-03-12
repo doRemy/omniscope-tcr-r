@@ -108,9 +108,10 @@ load_omniscope_contigs_cellwise <- function(
   .validate_cols(df, c("cell_id", "contig_id", "locus", "v_call", "j_call",
                         "cdr3", "cdr3_aa", "productive"), "contigs")
 
-  n_start <- nrow(df)
-  if (verbose) message("  Starting: ", n_start, " contigs | ",
-                       length(unique(df$cell_id)), " cells")
+  n_start         <- nrow(df)
+  n_start_cells   <- length(unique(df$cell_id))
+  n_start_contigs <- length(unique(df$contig_id))
+  if (verbose) message("  Starting: ", n_start, " contigs | ", n_start_cells, " cells")
 
   # Standardise logical columns (handle TRUE/FALSE stored as strings)
   for (col in intersect(c("productive", "stop_codon", "vj_in_frame", "complete_vdj"), colnames(df)))
@@ -220,7 +221,9 @@ load_omniscope_contigs_cellwise <- function(
                     paste(paste0(names(chains), " (n=", chains, ")"), collapse = ", ")))
   }
 
-  attr(out, "n_raw") <- n_start
+  attr(out, "n_raw")         <- n_start
+  attr(out, "n_raw_cells")   <- n_start_cells
+  attr(out, "n_raw_contigs") <- n_start_contigs
   out
 }
 
@@ -384,12 +387,38 @@ load_omniscope_pairs <- function(input.pairs, verbose = TRUE) {
 #'   require_complete_vdj,remove_multi_chain,resolve_ambiguous_genes,verbose
 #'   Forwarded to \code{load_omniscope_contigs_cellwise()}.
 #'
-#' @return Named list:
+#' @return Named list with three elements:
 #' \describe{
 #'   \item{cellwise}{Cell-wise table (one row per cell x chain). Empty
 #'     data.frame if no contigs were provided.}
 #'   \item{contigwise}{Contig-wise table (one row per unique contig_id),
 #'     augmented with counts and/or pairing information if provided.}
+#'   \item{summary}{Named list of QC counters:
+#'     \describe{
+#'       \item{contigs_n_rows_raw}{Rows in the cellwise table \emph{before}
+#'         QC filtering (total cell x chain entries in the raw input).}
+#'       \item{contigs_n_rows_filter}{Rows in the cellwise table \emph{after}
+#'         QC filtering.}
+#'       \item{contigs_n_cells_raw}{Unique cells (barcodes) \emph{before}
+#'         QC filtering.}
+#'       \item{contigs_n_cells_filter}{Unique cells (barcodes) \emph{after}
+#'         QC filtering.}
+#'       \item{contigs_n_contigs_raw}{Unique contig IDs \emph{before}
+#'         QC filtering.}
+#'       \item{contigs_n_contigs_filter}{Unique contig IDs after QC
+#'         filtering and collapsing to the contig-wise table.}
+#'       \item{counts_n_contigs_raw}{Contigs in the raw counts table.
+#'         \code{NA} if no counts table was provided.}
+#'       \item{counts_n_contigs_common}{Contig IDs shared between the
+#'         counts table and the contig-wise table. \code{NA} if no counts
+#'         table was provided.}
+#'       \item{pairs_n_contigs_raw}{Entries in the raw pairs table.
+#'         \code{NA} if no pairs table was provided.}
+#'       \item{pairs_n_contigs_common}{Contig IDs shared between the pairs
+#'         table and the contig-wise table. \code{NA} if no pairs table
+#'         was provided.}
+#'     }
+#'   }
 #' }
 #'
 #' @examples
@@ -400,6 +429,7 @@ load_omniscope_pairs <- function(input.pairs, verbose = TRUE) {
 #' )
 #' res$cellwise    # cell x chain table
 #' res$contigwise  # clone-level table with counts and pairing
+#' res$summary     # QC counters
 
 load_omniscope_tcr <- function(
     input.contigs           = NULL,
@@ -419,12 +449,16 @@ load_omniscope_tcr <- function(
   df.contigwise <- data.frame()
 
   # Initialise summary counters
-  contigs_n_contigs_total  <- NA_integer_
-  contigs_n_contigs_filter <- NA_integer_
-  counts_n_contigs_total   <- NA_integer_
-  counts_n_contigs_common  <- NA_integer_
-  pairs_n_contigs_total    <- NA_integer_
-  pairs_n_contigs_common   <- NA_integer_
+  contigs_n_rows_raw         <- NA_integer_
+  contigs_n_rows_filter      <- NA_integer_
+  contigs_n_cells_raw        <- NA_integer_
+  contigs_n_cells_filter     <- NA_integer_
+  contigs_n_contigs_raw      <- NA_integer_
+  contigs_n_contigs_filter   <- NA_integer_
+  counts_n_contigs_raw       <- NA_integer_
+  counts_n_contigs_common    <- NA_integer_
+  pairs_n_contigs_raw        <- NA_integer_
+  pairs_n_contigs_common     <- NA_integer_
 
   # 1. Load contigs -> cell-wise table
   if (!is.null(input.contigs) &&
@@ -439,7 +473,11 @@ load_omniscope_tcr <- function(
       resolve_ambiguous_genes = resolve_ambiguous_genes,
       verbose                 = verbose
     )
-    contigs_n_contigs_total <- attr(df.cellwise, "n_raw")
+    contigs_n_rows_raw      <- attr(df.cellwise, "n_raw")
+    contigs_n_rows_filter   <- nrow(df.cellwise)
+    contigs_n_cells_raw     <- attr(df.cellwise, "n_raw_cells")
+    contigs_n_cells_filter  <- length(unique(df.cellwise$barcode))
+    contigs_n_contigs_raw   <- attr(df.cellwise, "n_raw_contigs")
   }
 
   # 2. Collapse cell-wise into contig-wise
@@ -453,7 +491,7 @@ load_omniscope_tcr <- function(
       !(is.data.frame(input.counts) && nrow(input.counts) == 0)) {
     df.counts <- load_omniscope_counts(input.counts, verbose = verbose)
     if (nrow(df.counts) > 0) {
-      counts_n_contigs_total <- nrow(df.counts)
+      counts_n_contigs_raw <- nrow(df.counts)
       if (nrow(df.contigwise) > 0) {
         n_common <- length(
           intersect(df.contigwise$contig_id, df.counts$contig_id)
@@ -463,7 +501,7 @@ load_omniscope_tcr <- function(
           message(sprintf(
             "  Merge counts -> contigwise: %d / %d contigwise match",
             n_common, nrow(df.contigwise)
-          ), sprintf(" (%d total counts contigs).", counts_n_contigs_total))
+          ), sprintf(" (%d raw counts contigs).", counts_n_contigs_raw))
         df.contigwise <- merge(df.contigwise, df.counts, by = "contig_id", all.x = TRUE)
       } else {
         # No contigs table: counts becomes the base contig-wise table
@@ -477,7 +515,7 @@ load_omniscope_tcr <- function(
       !(is.data.frame(input.pairs) && nrow(input.pairs) == 0)) {
     df.pairs <- load_omniscope_pairs(input.pairs, verbose = verbose)
     if (nrow(df.pairs) > 0) {
-      pairs_n_contigs_total <- nrow(df.pairs)
+      pairs_n_contigs_raw <- nrow(df.pairs)
       if (nrow(df.contigwise) > 0) {
         n_common <- length(
           intersect(df.contigwise$contig_id, df.pairs$contig_id)
@@ -487,7 +525,7 @@ load_omniscope_tcr <- function(
           message(sprintf(
             "  Merge pairs -> contigwise: %d / %d contigwise match",
             n_common, nrow(df.contigwise)
-          ), sprintf(" (%d total pairs contigs).", pairs_n_contigs_total))
+          ), sprintf(" (%d raw pairs contigs).", pairs_n_contigs_raw))
         df.contigwise <- merge(df.contigwise, df.pairs, by = "contig_id", all.x = TRUE)
       } else {
         # No prior contig-wise table: pairs becomes the base
@@ -498,12 +536,16 @@ load_omniscope_tcr <- function(
 
   # Build summary
   qc_summary <- list(
-    contigs_n_contigs_total  = contigs_n_contigs_total,
-    contigs_n_contigs_filter = contigs_n_contigs_filter,
-    counts_n_contigs_total   = counts_n_contigs_total,
-    counts_n_contigs_common  = counts_n_contigs_common,
-    pairs_n_contigs_total    = pairs_n_contigs_total,
-    pairs_n_contigs_common   = pairs_n_contigs_common
+    contigs_n_rows_raw            = contigs_n_rows_raw,
+    contigs_n_rows_filter         = contigs_n_rows_filter,
+    contigs_n_cells_raw           = contigs_n_cells_raw,
+    contigs_n_cells_filter        = contigs_n_cells_filter,
+    contigs_n_contigs_raw         = contigs_n_contigs_raw,
+    contigs_n_contigs_filter      = contigs_n_contigs_filter,
+    counts_n_contigs_raw          = counts_n_contigs_raw,
+    counts_n_contigs_common       = counts_n_contigs_common,
+    pairs_n_contigs_raw           = pairs_n_contigs_raw,
+    pairs_n_contigs_common        = pairs_n_contigs_common
   )
 
   if (verbose) {
